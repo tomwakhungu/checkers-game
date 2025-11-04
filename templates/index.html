@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkers Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+        }
+        
+        h1 {
+            color: white;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .game-info {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .current-player {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 70px);
+            grid-template-rows: repeat(8, 70px);
+            gap: 0;
+            border: 4px solid #333;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            background: white;
+        }
+        
+        .square {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .square.light {
+            background-color: #f0d9b5;
+        }
+        
+        .square.dark {
+            background-color: #b58863;
+        }
+        
+        .square.selected {
+            background-color: #7fc97f !important;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        }
+        
+        .square.valid-move {
+            background-color: #ffd700 !important;
+        }
+        
+        .piece {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: 3px solid #333;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .piece.red {
+            background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+        }
+        
+        .piece.black {
+            background: radial-gradient(circle at 30% 30%, #495057, #212529);
+        }
+        
+        .piece.king::after {
+            content: '♔';
+            color: gold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        
+        .controls {
+            margin-top: 20px;
+        }
+        
+        button {
+            background: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <h1>🎮 Checkers Game</h1>
+    
+    <div class="game-info">
+        <div class="current-player">
+            Current Player: <span id="current-player" style="color: red;">Red</span>
+        </div>
+    </div>
+    
+    <div class="board" id="board"></div>
+    
+    <div class="controls">
+        <button onclick="resetGame()">New Game</button>
+    </div>
+
+    <script>
+        let selectedSquare = null;
+        let validMoves = [];
+        let currentBoard = [];
+        let currentPlayer = 'red';
+
+        async function loadGameState() {
+            const response = await fetch('/api/game/state');
+            const data = await response.json();
+            currentBoard = data.board;
+            currentPlayer = data.current_player;
+            updateBoard();
+        }
+
+        function updateBoard() {
+            const boardElement = document.getElementById('board');
+            boardElement.innerHTML = '';
+            
+            const playerElement = document.getElementById('current-player');
+            playerElement.textContent = currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1);
+            playerElement.style.color = currentPlayer;
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square';
+                    square.className += (row + col) % 2 === 0 ? ' light' : ' dark';
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+                    square.onclick = () => handleSquareClick(row, col);
+
+                    const piece = currentBoard[row][col];
+                    if (piece) {
+                        const pieceElement = document.createElement('div');
+                        pieceElement.className = 'piece ' + piece.split('_')[0];
+                        if (piece.includes('king')) {
+                            pieceElement.classList.add('king');
+                        }
+                        square.appendChild(pieceElement);
+                    }
+
+                    boardElement.appendChild(square);
+                }
+            }
+
+            highlightValidMoves();
+        }
+
+        async function handleSquareClick(row, col) {
+            const piece = currentBoard[row][col];
+
+            if (piece && piece.startsWith(currentPlayer)) {
+                selectedSquare = { row, col };
+                const response = await fetch('/api/game/moves', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ row, col })
+                });
+                const data = await response.json();
+                validMoves = data.moves;
+                highlightSelection();
+                highlightValidMoves();
+            }
+            else if (selectedSquare && isValidMove(row, col)) {
+                const response = await fetch('/api/game/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        from_row: selectedSquare.row,
+                        from_col: selectedSquare.col,
+                        to_row: row,
+                        to_col: col
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentBoard = data.board;
+                    currentPlayer = data.current_player;
+                    selectedSquare = null;
+                    validMoves = [];
+                    updateBoard();
+                } else {
+                    alert(data.message);
+                }
+            }
+            else {
+                selectedSquare = null;
+                validMoves = [];
+                updateBoard();
+            }
+        }
+
+        function isValidMove(row, col) {
+            return validMoves.some(move => move.row === row && move.col === col);
+        }
+
+        function highlightSelection() {
+            document.querySelectorAll('.square').forEach(square => {
+                square.classList.remove('selected');
+            });
+
+            if (selectedSquare) {
+                const square = document.querySelector(
+                    `.square[data-row="${selectedSquare.row}"][data-col="${selectedSquare.col}"]`
+                );
+                if (square) square.classList.add('selected');
+            }
+        }
+
+        function highlightValidMoves() {
+            document.querySelectorAll('.square').forEach(square => {
+                square.classList.remove('valid-move');
+            });
+
+            validMoves.forEach(move => {
+                const square = document.querySelector(
+                    `.square[data-row="${move.row}"][data-col="${move.col}"]`
+                );
+                if (square) square.classList.add('valid-move');
+            });
+        }
+
+        async function resetGame() {
+            const response = await fetch('/api/game/reset', { method: 'POST' });
+            const data = await response.json();
+            currentBoard = data.board;
+            currentPlayer = data.current_player;
+            selectedSquare = null;
+            validMoves = [];
+            updateBoard();
+        }
+
+        loadGameState();
+    </script>
+</body>
+</html>
