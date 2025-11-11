@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkers-game-service
+  labels:
+    app: checkers-game
+spec:
+  selector:
+    app: checkers-game
+  ports:
+  - port: 80
+    targetPort: 5000
+  type: LoadBalancer
